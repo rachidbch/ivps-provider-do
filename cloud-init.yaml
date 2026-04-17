@@ -1,0 +1,40 @@
+#cloud-config
+
+package_update: true
+packages:
+  - curl
+  - jq
+
+write_files:
+  - path: /etc/tailscale/auth-key
+    permissions: '0600'
+    content: |
+      ${TS_AUTH_KEY}
+
+runcmd:
+  # --- Tailscale ---
+  - curl -fsSL https://tailscale.com/install.sh | sh
+  - tailscale up --authkey=$(cat /etc/tailscale/auth-key) --hostname=${NODE_HOSTNAME} --ssh
+  - rm -f /etc/tailscale/auth-key
+
+  # --- Incus (Zabbly repo) ---
+  - mkdir -p /etc/apt/keyrings
+  - curl -fsSL https://pkgs.zabbly.com/key.asc | gpg --dearmor --yes -o /etc/apt/keyrings/zabbly.gpg
+  - |
+    echo "deb [signed-by=/etc/apt/keyrings/zabbly.gpg] https://pkgs.zabbly.com/incus/stable $(lsb_release -cs) main" \
+      > /etc/apt/sources.list.d/zabbly-incus-stable.list
+  - apt-get update -y
+  - apt-get install -y incus
+  - incus admin init --auto --network-address=:8443
+
+  # --- Caddy (gateway only) ---
+  - |
+    if [ "${IS_GATEWAY}" = "true" ]; then
+      apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+      apt-get update -y
+      apt-get install -y caddy
+    fi
+
+final_message: "ivps node ${NODE_HOSTNAME} bootstrapped successfully"

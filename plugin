@@ -1,0 +1,270 @@
+#!/bin/bash
+set -e
+
+# --- IVPS DigitalOcean Provider Plugin ---
+# Implements the IVPS plugin interface for DigitalOcean.
+
+# Load provider config if it exists
+load_provider_config() {
+    if [ ! -f "$IVPS_PROVIDER_CONFIG" ]; then
+        return 2
+    fi
+    source "$IVPS_PROVIDER_CONFIG"
+}
+
+# Ensure DO_API_TOKEN is available
+require_token() {
+    load_provider_config || {
+        echo "[ERROR] Provider not configured. Run: ivps node setup digitalocean" >&2
+        exit 2
+    }
+    if [ -z "$DO_API_TOKEN" ]; then
+        echo "[ERROR] DO_API_TOKEN not set. Run: ivps node setup digitalocean" >&2
+        exit 2
+    fi
+}
+
+# DigitalOcean API helper
+do_api() {
+    local method=$1
+    local endpoint=$2
+    local data=$3
+
+    local args=(-s -H "Authorization: Bearer $DO_API_TOKEN" -H "Content-Type: application/json")
+
+    if [ "$method" == "GET" ]; then
+        curl "${args[@]}" "https://api.digitalocean.com/v2${endpoint}"
+    elif [ "$method" == "DELETE" ]; then
+        curl "${args[@]}" -X DELETE "https://api.digitalocean.com/v2${endpoint}"
+    elif [ -n "$data" ]; then
+        curl "${args[@]}" -X "$method" "https://api.digitalocean.com/v2${endpoint}" -d "$data"
+    else
+        curl "${args[@]}" -X "$method" "https://api.digitalocean.com/v2${endpoint}"
+    fi
+}
+
+# --- SUBCOMMANDS ---
+
+cmd_setup() {
+    mkdir -p "$(dirname "$IVPS_PROVIDER_CONFIG")"
+
+    if [ -f "$IVPS_PROVIDER_CONFIG" ]; then
+        source "$IVPS_PROVIDER_CONFIG"
+        echo "Current DO_API_TOKEN: ${DO_API_TOKEN:0:8}..."
+        read -p "Enter new DigitalOcean API Token (or press Enter to keep): " new_token
+        [ -n "$new_token" ] && DO_API_TOKEN="$new_token"
+    else
+        echo "--- DigitalOcean Provider Setup ---"
+        read -p "Enter your DigitalOcean API Token: " DO_API_TOKEN
+    fi
+
+    cat <<EOF > "$IVPS_PROVIDER_CONFIG"
+# DigitalOcean Provider Configuration
+DO_API_TOKEN="$DO_API_TOKEN"
+EOF
+    chmod 600 "$IVPS_PROVIDER_CONFIG"
+    echo "Configuration saved to $IVPS_PROVIDER_CONFIG"
+}
+
+cmd_validate() {
+    require_token
+    local response
+    response=$(do_api GET /account 2>/dev/null)
+    local email
+    email=$(echo "$response" | jq -r '.account.email // empty')
+    if [ -n "$email" ]; then
+        echo "Authenticated as: $email"
+        return 0
+    else
+        echo "[ERROR] Failed to authenticate with DigitalOcean API." >&2
+        return 1
+    fi
+}
+
+cmd_create() {
+    require_token
+
+    local name=$1
+    shift
+
+    if [ -z "$name" ]; then
+        echo "[ERROR] Usage: plugin create <name> [--plan ...] [--region ...] [--image ...]" >&2
+        exit 1
+    fi
+
+    # Defaults
+    local plan="s-2vcpu-4gb"
+    local region="nyc1"
+    local image="ubuntu-24-04-x64"
+
+    # Parse options
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --plan)    plan="$2";    shift 2 ;;
+            --region)  region="$2";  shift 2 ;;
+            --image)   image="$2";   shift 2 ;;
+            *)         shift ;;
+        esac
+    done
+
+    # Read cloud-init template
+    local cloud_init_file="$IVPS_PROVIDER_DIR/cloud-init.yaml"
+    local user_data=""
+    if [ -f "$cloud_init_file" ]; then
+        # Template is passed through as-is; ivps handles variable substitution during bootstrap
+        user_data=$(cat "$cloud_init_file")
+    fi
+
+    echo "Creating droplet '$name' ($plan, $region, $image)..." >&2
+
+    # Build the create payload
+    local payload
+    payload=$(jq -n \
+        --arg name "$name" \
+        --arg region "$region" \
+        --arg size "$plan" \
+        --arg image "$image" \
+        --arg user_data "$user_data" \
+        '{
+            name: $name,
+            region: $region,
+            size: $size,
+            image: $image,
+            user_data: $user_data,
+            ssh_keys: [],
+            backups: false,
+            ipv6: true,
+            monitoring: true
+        }')
+
+    local response
+    response=$(do_api POST /droplets "$payload")
+
+    # Check for errors
+    local error_msg
+    error_msg=$(echo "$response" | jq -r '.message // empty')
+    if [ -n "$error_msg" ]; then
+        echo "[ERROR] $error_msg" >&2
+        exit 1
+    fi
+
+    local droplet_id
+    droplet_id=$(echo "$response" | jq -r '.droplet.id')
+    if [ -z "$droplet_id" ] || [ "$droplet_id" = "null" ]; then
+        echo "[ERROR] Failed to create droplet." >&2
+        exit 1
+    fi
+
+    echo "Droplet $droplet_id created. Waiting for IP..." >&2
+
+    # Poll for the droplet to get an IP (DO takes a moment to assign)
+    local retries=60
+    local count=0
+    local ipv4="" ipv6=""
+    while [ $count -lt $retries ]; do
+        local detail
+        detail=$(do_api GET "/droplets/$droplet_id")
+        ipv4=$(echo "$detail" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1)
+        ipv6=$(echo "$detail" | jq -r '.droplet.networks.v6[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1)
+
+        if [ -n "$ipv4" ]; then
+            break
+        fi
+        sleep 5
+        ((count++))
+    done
+
+    if [ -z "$ipv4" ]; then
+        echo "[ERROR] Timed out waiting for droplet IP." >&2
+        exit 1
+    fi
+
+    # Output contract for ivps
+    echo "IPV4:$ipv4"
+    echo "IPV6:${ipv6:-}"
+    echo "PROVIDER_ID:$droplet_id"
+    echo "METADATA:plan=$plan"
+    echo "METADATA:region=$region"
+    echo "METADATA:image=$image"
+}
+
+cmd_delete() {
+    require_token
+
+    local name=$1
+    if [ -z "$name" ]; then
+        echo "[ERROR] Usage: plugin delete <name>" >&2
+        exit 1
+    fi
+
+    # Look up droplet by name
+    local droplets
+    droplets=$(do_api GET "/droplets?name=$name")
+    local droplet_id
+    droplet_id=$(echo "$droplets" | jq -r ".droplets[0].id // empty")
+
+    if [ -z "$droplet_id" ]; then
+        echo "[ERROR] Droplet '$name' not found." >&2
+        exit 1
+    fi
+
+    echo "Destroying droplet $droplet_id ($name)..." >&2
+    do_api DELETE "/droplets/$droplet_id" > /dev/null
+    echo "Droplet destroyed." >&2
+}
+
+cmd_list() {
+    require_token
+
+    local droplets
+    droplets=$(do_api GET "/droplets?per_page=200")
+    echo "$droplets" | jq -r '.droplets[] | "\(.id)\t\(.name)\t\(.networks.v4[] | select(.type=="public") | .ip_address)\t\(.size_slug)\t\(.region.slug)\t\(.status)"' 2>/dev/null | \
+        column -t -s $'\t' -N "ID,NAME,IPV4,PLAN,REGION,STATUS"
+}
+
+cmd_show() {
+    require_token
+
+    local name=$1
+    if [ -z "$name" ]; then
+        echo "[ERROR] Usage: plugin show <name>" >&2
+        exit 1
+    fi
+
+    local droplets
+    droplets=$(do_api GET "/droplets?name=$name")
+    local droplet_id
+    droplet_id=$(echo "$droplets" | jq -r ".droplets[0].id // empty")
+
+    if [ -z "$droplet_id" ]; then
+        echo "[ERROR] Droplet '$name' not found." >&2
+        exit 1
+    fi
+
+    do_api GET "/droplets/$droplet_id" | jq '{
+        id: .droplet.id,
+        name: .droplet.name,
+        status: .droplet.status,
+        plan: .droplet.size.slug,
+        region: .droplet.region.slug,
+        ipv4: [.droplet.networks.v4[] | select(.type=="public") | .ip_address][0],
+        ipv6: [.droplet.networks.v6[] | select(.type=="public") | .ip_address][0],
+        image: .droplet.image.slug,
+        created: .droplet.created_at
+    }'
+}
+
+# --- DISPATCHER ---
+
+case "${1:-}" in
+    setup)    cmd_setup ;;
+    validate) cmd_validate ;;
+    create)   cmd_create "${@:2}" ;;
+    delete)   cmd_delete "$2" ;;
+    list)     cmd_list ;;
+    show)     cmd_show "$2" ;;
+    *)
+        echo "Usage: plugin <setup|validate|create|delete|list|show> [args]"
+        exit 1
+        ;;
+esac
