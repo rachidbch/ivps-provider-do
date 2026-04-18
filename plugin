@@ -3,21 +3,10 @@ set -e
 
 # --- IVPS DigitalOcean Provider Plugin ---
 # Implements the IVPS plugin interface for DigitalOcean.
-
-# Load provider config if it exists
-load_provider_config() {
-    if [ ! -f "$IVPS_PROVIDER_CONFIG" ]; then
-        return 2
-    fi
-    source "$IVPS_PROVIDER_CONFIG"
-}
+# Credentials are received as env vars (auto-exported by ivps from config.env).
 
 # Ensure DO_API_TOKEN is available
 require_token() {
-    load_provider_config || {
-        echo "[ERROR] Provider not configured. Run: ivps node setup digitalocean" >&2
-        exit 2
-    }
     if [ -z "$DO_API_TOKEN" ]; then
         echo "[ERROR] DO_API_TOKEN not set. Run: ivps node setup digitalocean" >&2
         exit 2
@@ -45,25 +34,8 @@ do_api() {
 
 # --- SUBCOMMANDS ---
 
-cmd_setup() {
-    mkdir -p "$(dirname "$IVPS_PROVIDER_CONFIG")"
-
-    if [ -f "$IVPS_PROVIDER_CONFIG" ]; then
-        source "$IVPS_PROVIDER_CONFIG"
-        echo "Current DO_API_TOKEN: ${DO_API_TOKEN:0:8}..."
-        read -p "Enter new DigitalOcean API Token (or press Enter to keep): " new_token
-        [ -n "$new_token" ] && DO_API_TOKEN="$new_token"
-    else
-        echo "--- DigitalOcean Provider Setup ---"
-        read -p "Enter your DigitalOcean API Token: " DO_API_TOKEN
-    fi
-
-    cat <<EOF > "$IVPS_PROVIDER_CONFIG"
-# DigitalOcean Provider Configuration
-DO_API_TOKEN="$DO_API_TOKEN"
-EOF
-    chmod 600 "$IVPS_PROVIDER_CONFIG"
-    echo "Configuration saved to $IVPS_PROVIDER_CONFIG"
+cmd_keys() {
+    echo "DO_API_TOKEN:DigitalOcean API Token"
 }
 
 cmd_validate() {
@@ -257,14 +229,14 @@ cmd_show() {
 # --- DISPATCHER ---
 
 case "${1:-}" in
-    setup)    cmd_setup ;;
+    keys)     cmd_keys ;;
     validate) cmd_validate ;;
     create)   cmd_create "${@:2}" ;;
     delete)   cmd_delete "$2" ;;
     list)     cmd_list ;;
     show)     cmd_show "$2" ;;
     *)
-        echo "Usage: plugin <setup|validate|create|delete|list|show> [args]"
+        echo "Usage: plugin <keys|validate|create|delete|list|show> [args]"
         exit 1
         ;;
 esac

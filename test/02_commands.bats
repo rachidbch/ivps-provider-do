@@ -16,7 +16,7 @@ teardown() {
 # --- cmd_validate ---
 
 @test "cmd_validate: succeeds with valid account response" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"account":{"email":"user@example.com"}}'
     run cmd_validate
     [ "$status" -eq 0 ]
@@ -24,7 +24,7 @@ teardown() {
 }
 
 @test "cmd_validate: fails with bad response" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"message":"Unauthorized"}'
     run cmd_validate
     [ "$status" -ne 0 ]
@@ -32,6 +32,7 @@ teardown() {
 }
 
 @test "cmd_validate: fails without token" {
+    unset DO_API_TOKEN
     run cmd_validate
     [ "$status" -eq 2 ]
 }
@@ -39,19 +40,20 @@ teardown() {
 # --- cmd_create ---
 
 @test "cmd_create: fails without name" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     run cmd_create
     [ "$status" -eq 1 ]
     echo "$output" | grep -q "Usage"
 }
 
 @test "cmd_create: fails without token" {
+    unset DO_API_TOKEN
     run cmd_create "my-node"
     [ "$status" -eq 2 ]
 }
 
 @test "cmd_create: returns IPV4/PROVIDER_ID on success" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
 
     # First call: create droplet
     _set_curl_response '{"droplet":{"id":98765}}'
@@ -84,7 +86,7 @@ STUB
 }
 
 @test "cmd_create: fails when DO API returns error" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"message":"Unprocessable Entity"}'
     run cmd_create "my-node"
     [ "$status" -eq 1 ]
@@ -92,7 +94,7 @@ STUB
 }
 
 @test "cmd_create: fails when droplet id is null" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"droplet":{}}'
     run cmd_create "my-node"
     [ "$status" -eq 1 ]
@@ -102,13 +104,13 @@ STUB
 # --- cmd_delete ---
 
 @test "cmd_delete: fails without name" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     run cmd_delete
     [ "$status" -eq 1 ]
 }
 
 @test "cmd_delete: fails when droplet not found" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"droplets":[],"meta":{"total":0}}'
     run cmd_delete "ghost-node"
     [ "$status" -eq 1 ]
@@ -116,7 +118,7 @@ STUB
 }
 
 @test "cmd_delete: succeeds when droplet exists" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"droplets":[{"id":11111,"name":"my-node"}],"meta":{"total":1}}'
     run cmd_delete "my-node"
     [ "$status" -eq 0 ]
@@ -124,6 +126,7 @@ STUB
 }
 
 @test "cmd_delete: fails without token" {
+    unset DO_API_TOKEN
     run cmd_delete "my-node"
     [ "$status" -eq 2 ]
 }
@@ -131,7 +134,7 @@ STUB
 # --- cmd_list ---
 
 @test "cmd_list: returns table from API" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"droplets":[{"id":1,"name":"node1","networks":{"v4":[{"type":"public","ip_address":"1.2.3.4"}]},"size_slug":"s-1vcpu-1gb","region":{"slug":"nyc1"},"status":"active"}],"meta":{"total":1}}'
     run cmd_list
     [ "$status" -eq 0 ]
@@ -139,6 +142,7 @@ STUB
 }
 
 @test "cmd_list: fails without token" {
+    unset DO_API_TOKEN
     run cmd_list
     [ "$status" -eq 2 ]
 }
@@ -146,13 +150,13 @@ STUB
 # --- cmd_show ---
 
 @test "cmd_show: fails without name" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     run cmd_show
     [ "$status" -eq 1 ]
 }
 
 @test "cmd_show: fails when droplet not found" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"droplets":[],"meta":{"total":0}}'
     run cmd_show "ghost"
     [ "$status" -eq 1 ]
@@ -160,7 +164,7 @@ STUB
 }
 
 @test "cmd_show: returns JSON details for existing droplet" {
-    _write_provider_config
+    export DO_API_TOKEN="test-fake-token-12345"
     _set_curl_response '{"droplets":[{"id":22222,"name":"my-node"}],"meta":{"total":1}}'
 
     # Override curl stub: first call returns list, second returns detail
@@ -184,6 +188,7 @@ STUB
 }
 
 @test "cmd_show: fails without token" {
+    unset DO_API_TOKEN
     run cmd_show "my-node"
     [ "$status" -eq 2 ]
 }

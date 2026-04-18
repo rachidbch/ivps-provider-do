@@ -11,22 +11,11 @@ _setup_do_env() {
     export XDG_CONFIG_HOME="$DO_TEST_TMPDIR/config"
     export IVPS_CONFIG_DIR="$XDG_CONFIG_HOME/ivps"
     export IVPS_PROVIDER_DIR="$PROJECT_DIR"
-    export IVPS_PROVIDER_CONFIG="$IVPS_CONFIG_DIR/providers/digitalocean.env"
-    mkdir -p "$IVPS_CONFIG_DIR/providers"
+    mkdir -p "$IVPS_CONFIG_DIR"
 }
 
 _teardown_do_env() {
     rm -rf "$DO_TEST_TMPDIR"
-}
-
-# Write a valid provider config
-_write_provider_config() {
-    local token="${1-test-fake-token-12345}"
-    cat <<EOF > "$IVPS_PROVIDER_CONFIG"
-# DigitalOcean Provider Configuration
-DO_API_TOKEN="$token"
-EOF
-    chmod 600 "$IVPS_PROVIDER_CONFIG"
 }
 
 # Stub curl to return canned DO API responses

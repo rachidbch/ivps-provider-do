@@ -13,7 +13,6 @@ teardown() {
 }
 
 @test "plugin: no args shows usage" {
-    IVPS_PROVIDER_CONFIG="$IVPS_PROVIDER_CONFIG" \
     IVPS_PROVIDER_DIR="$IVPS_PROVIDER_DIR" \
     IVPS_CONFIG_DIR="$IVPS_CONFIG_DIR" \
     run "$PLUGIN_BIN" 2>&1 || true
@@ -21,27 +20,32 @@ teardown() {
 }
 
 @test "plugin: unknown command shows usage" {
-    IVPS_PROVIDER_CONFIG="$IVPS_PROVIDER_CONFIG" \
     IVPS_PROVIDER_DIR="$IVPS_PROVIDER_DIR" \
     IVPS_CONFIG_DIR="$IVPS_CONFIG_DIR" \
     run "$PLUGIN_BIN" nonexistent 2>&1 || true
     echo "$output" | grep -q "Usage"
 }
 
-@test "plugin: validate fails without config" {
-    IVPS_PROVIDER_CONFIG="$IVPS_PROVIDER_CONFIG" \
+@test "plugin: keys outputs credential key names" {
+    IVPS_PROVIDER_DIR="$IVPS_PROVIDER_DIR" \
+    IVPS_CONFIG_DIR="$IVPS_CONFIG_DIR" \
+    run "$PLUGIN_BIN" keys
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q "DO_API_TOKEN:DigitalOcean API Token"
+}
+
+@test "plugin: validate fails without token" {
     IVPS_PROVIDER_DIR="$IVPS_PROVIDER_DIR" \
     IVPS_CONFIG_DIR="$IVPS_CONFIG_DIR" \
     run "$PLUGIN_BIN" validate 2>&1 || true
-    echo "$output" | grep -q "not configured"
+    echo "$output" | grep -q "not set"
 }
 
-@test "plugin: list fails without config" {
-    IVPS_PROVIDER_CONFIG="$IVPS_PROVIDER_CONFIG" \
+@test "plugin: list fails without token" {
     IVPS_PROVIDER_DIR="$IVPS_PROVIDER_DIR" \
     IVPS_CONFIG_DIR="$IVPS_CONFIG_DIR" \
     run "$PLUGIN_BIN" list 2>&1 || true
-    echo "$output" | grep -q "not configured"
+    echo "$output" | grep -q "not set"
 }
 
 @test "plugin: cloud-init.yaml exists in plugin dir" {
