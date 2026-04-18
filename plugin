@@ -81,12 +81,15 @@ cmd_create() {
         esac
     done
 
-    # Read cloud-init template
+    # Read cloud-init template and substitute variables
     local cloud_init_file="$IVPS_PROVIDER_DIR/cloud-init.yaml"
     local user_data=""
     if [ -f "$cloud_init_file" ]; then
-        # Template is passed through as-is; ivps handles variable substitution during bootstrap
-        user_data=$(cat "$cloud_init_file")
+        user_data=$(sed \
+            -e "s|\${TS_AUTH_KEY}|${TS_AUTH_KEY:-}|g" \
+            -e "s|\${NODE_HOSTNAME}|$name|g" \
+            -e "s|\${IS_GATEWAY}|false|g" \
+            "$cloud_init_file")
     fi
 
     echo "Creating droplet '$name' ($plan, $region, $image)..." >&2
