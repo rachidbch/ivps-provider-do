@@ -137,15 +137,15 @@ cmd_create() {
     local ipv4="" ipv6=""
     while [ $count -lt $retries ]; do
         local detail
-        detail=$(do_api GET "/droplets/$droplet_id")
-        ipv4=$(echo "$detail" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1)
-        ipv6=$(echo "$detail" | jq -r '.droplet.networks.v6[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1)
+        detail=$(do_api GET "/droplets/$droplet_id") || true
+        ipv4=$(echo "$detail" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1) || true
+        ipv6=$(echo "$detail" | jq -r '.droplet.networks.v6[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1) || true
 
         if [ -n "$ipv4" ]; then
             break
         fi
         sleep 5
-        ((count++))
+        count=$((count + 1))
     done
 
     if [ -z "$ipv4" ]; then
