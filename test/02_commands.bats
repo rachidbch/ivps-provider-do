@@ -15,17 +15,17 @@ teardown() {
 
 # --- cmd_validate ---
 
-@test "cmd_validate: succeeds with valid account response" {
+@test "cmd_validate: succeeds with valid regions response" {
     export DO_API_TOKEN="test-fake-token-12345"
-    _set_curl_response '{"account":{"email":"user@example.com"}}'
+    _set_curl_response '{"regions":[{"slug":"nyc1"},{"slug":"sfo3"}],"meta":{"total":2}}'
     run cmd_validate
     [ "$status" -eq 0 ]
-    echo "$output" | grep -q "user@example.com"
+    echo "$output" | grep -q "Authenticated"
 }
 
 @test "cmd_validate: fails with bad response" {
     export DO_API_TOKEN="test-fake-token-12345"
-    _set_curl_response '{"message":"Unauthorized"}'
+    _set_curl_response '{"id":"Forbidden","message":"You are not authorized"}'
     run cmd_validate
     [ "$status" -ne 0 ]
     echo "$output" | grep -q "Failed to authenticate"

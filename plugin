@@ -41,14 +41,16 @@ cmd_keys() {
 cmd_validate() {
     require_token
     local response
-    response=$(do_api GET /account 2>/dev/null)
-    local email
-    email=$(echo "$response" | jq -r '.account.email // empty')
-    if [ -n "$email" ]; then
-        echo "Authenticated as: $email"
+    response=$(do_api GET /regions 2>/dev/null)
+    local region_count
+    region_count=$(echo "$response" | jq '.regions | length' 2>/dev/null)
+    if [ -n "$region_count" ] && [ "$region_count" -gt 0 ] 2>/dev/null; then
+        echo "Authenticated: $region_count regions available"
         return 0
     else
-        echo "[ERROR] Failed to authenticate with DigitalOcean API." >&2
+        local msg
+        msg=$(echo "$response" | jq -r '.message // empty' 2>/dev/null)
+        echo "[ERROR] Failed to authenticate with DigitalOcean API.${msg:+ $msg}" >&2
         return 1
     fi
 }
