@@ -5,13 +5,11 @@ packages:
   - curl
   - jq
 
-# Disable password expiry for root (DO default forces change on first login)
-bootcmd:
-  - passwd -u root || true
-  - chage -I -1 -m 0 -M 99999 -E -1 root
-
-ssh_authorized_keys:
-  - ${SSH_PUBLIC_KEY}
+users:
+  - name: root
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
 
 write_files:
   - path: /etc/tailscale/auth-key
@@ -20,6 +18,9 @@ write_files:
       ${TS_AUTH_KEY}
 
 runcmd:
+  # Disable password expiry (DO default forces change on first login)
+  - chage -I -1 -m 0 -M 99999 -E -1 root
+
   # --- Tailscale ---
   - curl -fsSL https://tailscale.com/install.sh | sh
   - tailscale up --authkey=$(cat /etc/tailscale/auth-key) --hostname=${NODE_HOSTNAME} --ssh
