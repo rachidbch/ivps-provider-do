@@ -5,6 +5,14 @@ packages:
   - curl
   - jq
 
+# DO images set an expired root password by default. PAM blocks SSH
+# sessions (even key-based) until the password is changed. Set a dummy
+# non-expired password to satisfy PAM while keeping SSH key auth primary.
+chpasswd:
+  list: |
+    root:R
+  expire: False
+
 ssh_authorized_keys:
   - ${SSH_PUBLIC_KEY}
 
@@ -14,10 +22,7 @@ write_files:
     content: |
       ${TS_AUTH_KEY}
 
-# Clear DO's forced password expiry so SSH key auth works
 runcmd:
-  - chage -I -1 -m 0 -M 99999 -E -1 root
-
   # --- Tailscale ---
   - curl -fsSL https://tailscale.com/install.sh | sh
   - tailscale up --authkey=$(cat /etc/tailscale/auth-key) --hostname=${NODE_HOSTNAME} --ssh
