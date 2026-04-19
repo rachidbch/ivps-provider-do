@@ -35,25 +35,37 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
-# --- do_api ---
+# --- require_doctl ---
 
-@test "do_api: calls curl with correct auth header" {
+@test "require_doctl: fails when doctl not in PATH (exit 4)" {
     export DO_API_TOKEN="test-fake-token-12345"
-    run do_api GET /account
-    [ "$status" -eq 0 ]
+    # Remove doctl from PATH by creating a clean stub dir without it
+    local clean_dir="$DO_TEST_TMPDIR/clean_stubs"
+    mkdir -p "$clean_dir"
+    # Put essentials (jq, envsubst, rm, etc.) but NOT doctl
+    if command -v jq &>/dev/null; then
+        ln -sf "$(command -v jq)" "$clean_dir/jq"
+    fi
+    if command -v envsubst &>/dev/null; then
+        ln -sf "$(command -v envsubst)" "$clean_dir/envsubst"
+    fi
+    # Save original PATH and restore after
+    local saved_path="$PATH"
+    export PATH="$clean_dir"
+    run require_doctl
+    export PATH="$saved_path"
+    [ "$status" -eq 4 ]
+    echo "$output" | grep -q "doctl"
 }
 
-@test "do_api: GET passes through curl response" {
+@test "require_doctl: succeeds when doctl is available" {
     export DO_API_TOKEN="test-fake-token-12345"
-    _set_curl_response '{"account":{"email":"test@example.com"}}'
-    run do_api GET /account
-    echo "$output" | grep -q "test@example.com"
-}
-
-@test "do_api: DELETE method" {
-    export DO_API_TOKEN="test-fake-token-12345"
-    _set_curl_response ''
-    run do_api DELETE /droplets/123
+    # Create a fake doctl in the stub dir
+    echo '#!/bin/bash' > "$DO_TEST_TMPDIR/stubs/doctl"
+    echo 'echo "doctl stub"' >> "$DO_TEST_TMPDIR/stubs/doctl"
+    chmod +x "$DO_TEST_TMPDIR/stubs/doctl"
+    export PATH="$DO_TEST_TMPDIR/stubs:$PATH"
+    run require_doctl
     [ "$status" -eq 0 ]
 }
 

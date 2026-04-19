@@ -36,7 +36,7 @@ runcmd:
       > /etc/apt/sources.list.d/zabbly-incus-stable.list
   - apt-get update -y
   - apt-get install -y incus
-  - incus admin init --auto --network-address=:8443
+  - incus admin init --auto "--network-address=:8443"
 
   # --- Caddy (gateway only) ---
   - |

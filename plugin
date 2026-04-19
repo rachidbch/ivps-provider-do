@@ -4,31 +4,28 @@ set -e
 # --- IVPS DigitalOcean Provider Plugin ---
 # Implements the IVPS plugin interface for DigitalOcean.
 # Credentials are received as env vars (auto-exported by ivps from config.env).
+# Cloud-init templating and cleanup on failure are handled by ivps core.
+
+# Exit code constants
+EXIT_OK=0
+EXIT_ERR=1
+EXIT_AUTH=2
+EXIT_NOTFOUND=3
+EXIT_DEP=4
 
 # Ensure DO_API_TOKEN is available
 require_token() {
     if [ -z "$DO_API_TOKEN" ]; then
         echo "[ERROR] DO_API_TOKEN not set. Run: ivps node setup digitalocean" >&2
-        exit 2
+        exit "$EXIT_AUTH"
     fi
 }
 
-# DigitalOcean API helper
-do_api() {
-    local method=$1
-    local endpoint=$2
-    local data=$3
-
-    local args=(-s -H "Authorization: Bearer $DO_API_TOKEN" -H "Content-Type: application/json")
-
-    if [ "$method" == "GET" ]; then
-        curl "${args[@]}" "https://api.digitalocean.com/v2${endpoint}"
-    elif [ "$method" == "DELETE" ]; then
-        curl "${args[@]}" -X DELETE "https://api.digitalocean.com/v2${endpoint}"
-    elif [ -n "$data" ]; then
-        curl "${args[@]}" -X "$method" "https://api.digitalocean.com/v2${endpoint}" -d "$data"
-    else
-        curl "${args[@]}" -X "$method" "https://api.digitalocean.com/v2${endpoint}"
+# Ensure doctl is installed
+require_doctl() {
+    if ! command -v doctl &>/dev/null; then
+        echo "[ERROR] doctl is not installed. Install: https://docs.digitalocean.com/reference/doctl/how-to/install/" >&2
+        exit "$EXIT_DEP"
     fi
 }
 
@@ -40,138 +37,96 @@ cmd_keys() {
 
 cmd_validate() {
     require_token
+    require_doctl
     local response
-    response=$(do_api GET /regions 2>/dev/null)
-    local region_count
-    region_count=$(echo "$response" | jq '.regions | length' 2>/dev/null)
-    if [ -n "$region_count" ] && [ "$region_count" -gt 0 ] 2>/dev/null; then
-        echo "Authenticated: $region_count regions available"
+    response=$(doctl account get -t "$DO_API_TOKEN" -o json 2>/dev/null) || true
+    local email
+    email=$(echo "$response" | jq -r '.email // empty' 2>/dev/null)
+    if [ -n "$email" ]; then
+        echo "Authenticated: $email"
         return 0
     else
         local msg
         msg=$(echo "$response" | jq -r '.message // empty' 2>/dev/null)
         echo "[ERROR] Failed to authenticate with DigitalOcean API.${msg:+ $msg}" >&2
-        return 1
+        exit "$EXIT_AUTH"
     fi
 }
 
 cmd_create() {
     require_token
+    require_doctl
 
     local name=$1
     shift
 
     if [ -z "$name" ]; then
-        echo "[ERROR] Usage: plugin create <name> [--plan ...] [--region ...] [--image ...]" >&2
-        exit 1
+        echo "[ERROR] Usage: plugin create <name> [--plan ...] [--region ...] [--image ...] [--cloud-init <path>]" >&2
+        exit "$EXIT_ERR"
     fi
 
     # Defaults
     local plan="s-2vcpu-4gb"
     local region="nyc1"
     local image="ubuntu-24-04-x64"
+    local cloud_init_path=""
 
     # Parse options
     while [ $# -gt 0 ]; do
         case "$1" in
-            --plan)    plan="$2";    shift 2 ;;
-            --region)  region="$2";  shift 2 ;;
-            --image)   image="$2";   shift 2 ;;
-            *)         shift ;;
+            --plan)       plan="$2";           shift 2 ;;
+            --region)     region="$2";         shift 2 ;;
+            --image)      image="$2";          shift 2 ;;
+            --cloud-init) cloud_init_path="$2"; shift 2 ;;
+            *)            shift ;;
         esac
     done
 
-    # Read cloud-init template and substitute variables
-    local cloud_init_file="$IVPS_PROVIDER_DIR/cloud-init.yaml"
-    local user_data=""
-    if [ -f "$cloud_init_file" ]; then
-        # Read SSH public key for injection into the node
-        local ssh_key="${SSH_PUBLIC_KEY:-}"
-        if [ -z "$ssh_key" ]; then
-            for keyfile in ~/.ssh/id_ed25519.pub ~/.ssh/id_rsa.pub ~/.ssh/id_ecdsa.pub; do
-                if [ -f "$keyfile" ]; then
-                    ssh_key=$(cat "$keyfile")
-                    break
-                fi
-            done
-        fi
-
-        user_data=$(sed \
-            -e "s|\${TS_AUTH_KEY}|${TS_AUTH_KEY:-}|g" \
-            -e "s|\${NODE_HOSTNAME}|$name|g" \
-            -e "s|\${IS_GATEWAY}|false|g" \
-            -e "s|\${SSH_PUBLIC_KEY}|${ssh_key}|g" \
-            "$cloud_init_file")
-    fi
-
     echo "Creating droplet '$name' ($plan, $region, $image)..." >&2
 
-    # Build the create payload
-    local payload
-    payload=$(jq -n \
-        --arg name "$name" \
-        --arg region "$region" \
-        --arg size "$plan" \
-        --arg image "$image" \
-        --arg user_data "$user_data" \
-        '{
-            name: $name,
-            region: $region,
-            size: $size,
-            image: $image,
-            user_data: $user_data,
-            ssh_keys: [],
-            backups: false,
-            ipv6: true,
-            monitoring: true
-        }')
+    # Build doctl create args
+    local create_args=(
+        compute droplet create "$name"
+        --size "$plan"
+        --image "$image"
+        --region "$region"
+        --enable-ipv6
+        --enable-monitoring
+        --wait
+        -t "$DO_API_TOKEN"
+        -o json
+    )
+    if [ -n "$cloud_init_path" ] && [ -f "$cloud_init_path" ]; then
+        create_args+=(--user-data-file "$cloud_init_path")
+    fi
 
     local response
-    response=$(do_api POST /droplets "$payload")
+    response=$(doctl "${create_args[@]}" 2>/dev/null)
 
-    # Check for errors
-    local error_msg
-    error_msg=$(echo "$response" | jq -r '.message // empty')
-    if [ -n "$error_msg" ]; then
-        echo "[ERROR] $error_msg" >&2
-        exit 1
+    # Check for errors — response must be a JSON array with a valid id
+    local first_id
+    first_id=$(echo "$response" | jq -r '.[0].id // empty' 2>/dev/null) || true
+
+    if [ -z "$first_id" ]; then
+        local err_msg
+        err_msg=$(echo "$response" | jq -r '.message // empty' 2>/dev/null) || true
+        echo "[ERROR] ${err_msg:-$(echo "$response" | head -1)}" >&2
+        exit "$EXIT_ERR"
     fi
 
-    local droplet_id
-    droplet_id=$(echo "$response" | jq -r '.droplet.id')
-    if [ -z "$droplet_id" ] || [ "$droplet_id" = "null" ]; then
-        echo "[ERROR] Failed to create droplet." >&2
-        exit 1
-    fi
-
-    echo "Droplet $droplet_id created. Waiting for IP..." >&2
-
-    # Poll for the droplet to get an IP (DO takes a moment to assign)
-    local retries=60
-    local count=0
-    local ipv4="" ipv6=""
-    while [ $count -lt $retries ]; do
-        local detail
-        detail=$(do_api GET "/droplets/$droplet_id") || true
-        ipv4=$(echo "$detail" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1) || true
-        ipv6=$(echo "$detail" | jq -r '.droplet.networks.v6[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1) || true
-
-        if [ -n "$ipv4" ]; then
-            break
-        fi
-        sleep 5
-        count=$((count + 1))
-    done
+    local ipv4 ipv6
+    ipv4=$(echo "$response" | jq -r '.[0].networks.v4[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1) || true
+    ipv6=$(echo "$response" | jq -r '.[0].networks.v6[] | select(.type=="public") | .ip_address' 2>/dev/null | head -1) || true
 
     if [ -z "$ipv4" ]; then
-        echo "[ERROR] Timed out waiting for droplet IP." >&2
-        exit 1
+        echo "[ERROR] Droplet created but no IPv4 assigned." >&2
+        exit "$EXIT_ERR"
     fi
 
     # Output contract for ivps
     echo "IPV4:$ipv4"
     echo "IPV6:${ipv6:-}"
-    echo "PROVIDER_ID:$droplet_id"
+    echo "PROVIDER_ID:$(echo "$response" | jq -r '.[0].id')"
     echo "METADATA:plan=$plan"
     echo "METADATA:region=$region"
     echo "METADATA:image=$image"
@@ -179,67 +134,73 @@ cmd_create() {
 
 cmd_delete() {
     require_token
+    require_doctl
 
     local name=$1
     if [ -z "$name" ]; then
         echo "[ERROR] Usage: plugin delete <name>" >&2
-        exit 1
+        exit "$EXIT_ERR"
     fi
 
-    # Look up droplet by name
-    local droplets
-    droplets=$(do_api GET "/droplets?name=$name")
+    # Look up droplet by name via doctl
+    local response
+    response=$(doctl compute droplet get "$name" -t "$DO_API_TOKEN" -o json 2>/dev/null) || true
+
     local droplet_id
-    droplet_id=$(echo "$droplets" | jq -r ".droplets[0].id // empty")
+    droplet_id=$(echo "$response" | jq -r '.id // empty' 2>/dev/null)
 
     if [ -z "$droplet_id" ]; then
         echo "[ERROR] Droplet '$name' not found." >&2
-        exit 1
+        exit "$EXIT_NOTFOUND"
     fi
 
     echo "Destroying droplet $droplet_id ($name)..." >&2
-    do_api DELETE "/droplets/$droplet_id" > /dev/null
+    doctl compute droplet delete "$name" -f -t "$DO_API_TOKEN" &>/dev/null
     echo "Droplet destroyed." >&2
 }
 
 cmd_list() {
     require_token
+    require_doctl
 
     local droplets
-    droplets=$(do_api GET "/droplets?per_page=200")
-    echo "$droplets" | jq -r '.droplets[] | "\(.id)\t\(.name)\t\(.networks.v4[] | select(.type=="public") | .ip_address)\t\(.size_slug)\t\(.region.slug)\t\(.status)"' 2>/dev/null | \
+    droplets=$(doctl compute droplet list -t "$DO_API_TOKEN" -o json 2>/dev/null)
+    echo "$droplets" | jq -r '.[] | "\(.id)\t\(.name)\t\(.networks.v4[] | select(.type=="public") | .ip_address)\t\(.size.slug)\t\(.region.slug)\t\(.status)"' 2>/dev/null | \
         column -t -s $'\t' -N "ID,NAME,IPV4,PLAN,REGION,STATUS"
 }
 
 cmd_show() {
     require_token
+    require_doctl
 
     local name=$1
     if [ -z "$name" ]; then
         echo "[ERROR] Usage: plugin show <name>" >&2
-        exit 1
+        exit "$EXIT_ERR"
     fi
 
-    local droplets
-    droplets=$(do_api GET "/droplets?name=$name")
+    local response
+    response=$(doctl compute droplet get "$name" -t "$DO_API_TOKEN" -o json 2>/dev/null) || true
+
+    # Check if we got valid JSON with an id field
     local droplet_id
-    droplet_id=$(echo "$droplets" | jq -r ".droplets[0].id // empty")
+    droplet_id=$(echo "$response" | jq -r '.id // empty' 2>/dev/null)
 
     if [ -z "$droplet_id" ]; then
         echo "[ERROR] Droplet '$name' not found." >&2
-        exit 1
+        exit "$EXIT_NOTFOUND"
     fi
 
-    do_api GET "/droplets/$droplet_id" | jq '{
-        id: .droplet.id,
-        name: .droplet.name,
-        status: .droplet.status,
-        plan: .droplet.size.slug,
-        region: .droplet.region.slug,
-        ipv4: [.droplet.networks.v4[] | select(.type=="public") | .ip_address][0],
-        ipv6: [.droplet.networks.v6[] | select(.type=="public") | .ip_address][0],
-        image: .droplet.image.slug,
-        created: .droplet.created_at
+    echo "$response" | jq '{
+        id: .id,
+        name: .name,
+        status: .status,
+        plan: .size.slug,
+        region: .region.slug,
+        ipv4: [.networks.v4[] | select(.type=="public") | .ip_address][0],
+        ipv6: [.networks.v6[] | select(.type=="public") | .ip_address][0],
+        image: .image.slug,
+        created: .created_at
     }'
 }
 
@@ -254,6 +215,6 @@ case "${1:-}" in
     show)     cmd_show "$2" ;;
     *)
         echo "Usage: plugin <keys|validate|create|delete|list|show> [args]"
-        exit 1
+        exit "$EXIT_ERR"
         ;;
 esac
