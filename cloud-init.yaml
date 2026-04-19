@@ -5,6 +5,10 @@ packages:
   - curl
   - jq
 
+# Disable password expiry for root (DO default forces change on first login)
+chpasswd:
+  expire: false
+
 ssh_authorized_keys:
   - ${SSH_PUBLIC_KEY}
 
