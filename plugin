@@ -85,10 +85,22 @@ cmd_create() {
     local cloud_init_file="$IVPS_PROVIDER_DIR/cloud-init.yaml"
     local user_data=""
     if [ -f "$cloud_init_file" ]; then
+        # Read SSH public key for injection into the node
+        local ssh_key="${SSH_PUBLIC_KEY:-}"
+        if [ -z "$ssh_key" ]; then
+            for keyfile in ~/.ssh/id_ed25519.pub ~/.ssh/id_rsa.pub ~/.ssh/id_ecdsa.pub; do
+                if [ -f "$keyfile" ]; then
+                    ssh_key=$(cat "$keyfile")
+                    break
+                fi
+            done
+        fi
+
         user_data=$(sed \
             -e "s|\${TS_AUTH_KEY}|${TS_AUTH_KEY:-}|g" \
             -e "s|\${NODE_HOSTNAME}|$name|g" \
             -e "s|\${IS_GATEWAY}|false|g" \
+            -e "s|\${SSH_PUBLIC_KEY}|${ssh_key}|g" \
             "$cloud_init_file")
     fi
 

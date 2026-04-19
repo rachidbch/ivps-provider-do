@@ -5,6 +5,9 @@ packages:
   - curl
   - jq
 
+ssh_authorized_keys:
+  - ${SSH_PUBLIC_KEY}
+
 write_files:
   - path: /etc/tailscale/auth-key
     permissions: '0600'
