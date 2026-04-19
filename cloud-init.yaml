@@ -6,8 +6,9 @@ packages:
   - jq
 
 # Disable password expiry for root (DO default forces change on first login)
-chpasswd:
-  expire: false
+bootcmd:
+  - passwd -u root || true
+  - chage -I -1 -m 0 -M 99999 -E -1 root
 
 ssh_authorized_keys:
   - ${SSH_PUBLIC_KEY}
