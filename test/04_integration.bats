@@ -63,6 +63,10 @@ _run_ivps() {
     grep -q 'TS_AUTH_KEY' "$cloud_init"
     grep -q 'NODE_HOSTNAME' "$cloud_init"
     grep -q 'SSH_PUBLIC_KEY' "$cloud_init"
+    # Node bridge DNS policy must mirror ivps-plugin-skeleton (see ivps repo)
+    grep -q 'incus network set incusbr0 dns.mode=managed' "$cloud_init"
+    grep -q 'incus network set incusbr0 dns.search=\${TS_DOMAIN}' "$cloud_init"
+    grep -q 'TS_DOMAIN' "$cloud_init"
 }
 
 # --- Test 3: create uses doctl --wait instead of IP polling ---

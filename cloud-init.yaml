@@ -38,6 +38,13 @@ runcmd:
   - apt-get install -y incus
   - incus admin init --auto "--network-address=:8443"
 
+  # Node bridge DNS: *.incus records stay (dns.mode=managed) but the DHCP
+  # search suffix is the tailnet domain, not 'incus' — otherwise the internal
+  # .incus search shadows MagicDNS (bare 'ssh affine' hits eth0 instead of the
+  # tailnet IP). ${TS_DOMAIN} is rendered by ivps core. Mirrors the skeleton.
+  - incus network set incusbr0 dns.mode=managed
+  - incus network set incusbr0 dns.search=${TS_DOMAIN}
+
   # --- Caddy (gateway only) ---
   - |
     if [ "${IS_GATEWAY}" = "true" ]; then
