@@ -8,6 +8,8 @@ Credentials are received as env vars (auto-exported by ivps from `config.env`). 
 
 Cloud-init templating and cleanup-on-failure are handled by ivps core — the plugin does **not** need `envsubst`, SSH key discovery, or cleanup traps.
 
+`cloud-init.yaml` mirrors `ivps-plugin-skeleton` — it MUST keep the node bridge DNS block after `incus admin init`: `incus network set incusbr0 dns.mode=managed` + `dns.search=${TS_DOMAIN}` (ivps ADR-006: keeps `*.incus` records, advertises the tailnet domain as DHCP search so MagicDNS owns bare names). `${TS_DOMAIN}` is rendered by ivps core. Integration test 04 asserts the block.
+
 ## Dependencies
 
 - **doctl** — Official DigitalOcean CLI. Handles auth, retry, and polling. Install: https://docs.digitalocean.com/reference/doctl/how-to/install/
