@@ -3,7 +3,7 @@
 
 TEST_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")" && pwd)"
 PROJECT_DIR="$(cd "$TEST_DIR/.." && pwd)"
-PLUGIN_BIN="$PROJECT_DIR/plugin"
+PLUGIN_BIN="$PROJECT_DIR/plugin.sh"
 
 # Temp environment — each test gets a fresh one
 _setup_do_env() {
@@ -58,9 +58,9 @@ _set_curl_response() {
     _set_doctl_response "$1"
 }
 
-# Source plugin functions without the dispatcher
+# Source plugin functions (library-style, no dispatcher to strip)
 source_plugin_functions() {
-    eval "$(sed '/^# --- DISPATCHER ---$/,$d' "$PLUGIN_BIN" | grep -v '^set -e')"
+    source "$PLUGIN_BIN"
 }
 
 # --- Integration test helpers ---
@@ -96,7 +96,6 @@ EOF
 
     # Install DO plugin into ivps plugins dir
     cp -r "$PROJECT_DIR" "$PLUGINS_DIR/digitalocean"
-    chmod +x "$PLUGINS_DIR/digitalocean/plugin"
 
     # Create fake SSH key
     _create_ssh_key_stub

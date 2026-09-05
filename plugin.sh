@@ -1,10 +1,10 @@
-#!/bin/bash
-set -e
-
 # --- IVPS DigitalOcean Provider Plugin ---
 # Implements the IVPS plugin interface for DigitalOcean.
 # Credentials are received as env vars (auto-exported by ivps from config.env).
 # Cloud-init templating and cleanup on failure are handled by ivps core.
+#
+# This is a library — ivps sources it and calls cmd_* functions directly.
+# No shebang, no set -e, no dispatcher.
 
 # Exit code constants
 EXIT_OK=0
@@ -29,7 +29,7 @@ require_doctl() {
     fi
 }
 
-# --- SUBCOMMANDS ---
+# --- PLUGIN FUNCTIONS ---
 
 cmd_keys() {
     echo "DO_API_TOKEN:DigitalOcean API Token"
@@ -61,7 +61,7 @@ cmd_create() {
     shift
 
     if [ -z "$name" ]; then
-        echo "[ERROR] Usage: plugin create <name> [--plan ...] [--region ...] [--image ...] [--cloud-init <path>]" >&2
+        echo "[ERROR] Usage: cmd_create <name> [--plan ...] [--region ...] [--image ...] [--cloud-init <path>]" >&2
         exit "$EXIT_ERR"
     fi
 
@@ -138,7 +138,7 @@ cmd_delete() {
 
     local name=$1
     if [ -z "$name" ]; then
-        echo "[ERROR] Usage: plugin delete <name>" >&2
+        echo "[ERROR] Usage: cmd_delete <name>" >&2
         exit "$EXIT_ERR"
     fi
 
@@ -175,7 +175,7 @@ cmd_show() {
 
     local name=$1
     if [ -z "$name" ]; then
-        echo "[ERROR] Usage: plugin show <name>" >&2
+        echo "[ERROR] Usage: cmd_show <name>" >&2
         exit "$EXIT_ERR"
     fi
 
@@ -203,18 +203,3 @@ cmd_show() {
         created: .created_at
     }'
 }
-
-# --- DISPATCHER ---
-
-case "${1:-}" in
-    keys)     cmd_keys ;;
-    validate) cmd_validate ;;
-    create)   cmd_create "${@:2}" ;;
-    delete)   cmd_delete "$2" ;;
-    list)     cmd_list ;;
-    show)     cmd_show "$2" ;;
-    *)
-        echo "Usage: plugin <keys|validate|create|delete|list|show> [args]"
-        exit "$EXIT_ERR"
-        ;;
-esac
