@@ -28,9 +28,9 @@ _run_ivps() {
     [ "$status" -eq 0 ]
 
     # Verify plugin output was parsed — node metadata saved
-    [ -f "$NODES_DIR/test-node.json" ]
+    [ -f "$NODES_DIR/test-node/node.json" ]
     local meta
-    meta=$(cat "$NODES_DIR/test-node.json")
+    meta=$(cat "$NODES_DIR/test-node/node.json")
     echo "$meta" | jq -e '.name == "test-node"'
     echo "$meta" | jq -e '.provider == "digitalocean"'
     echo "$meta" | jq -e '.ipv4 == "203.0.113.42"'
@@ -142,7 +142,7 @@ _run_ivps() {
     # First create a node
     _run_ivps node create digitalocean:test-node
     [ "$status" -eq 0 ]
-    [ -f "$NODES_DIR/test-node.json" ]
+    [ -f "$NODES_DIR/test-node/node.json" ]
 
     # Now delete it
     _advance_boot_state "destroyed"
@@ -150,7 +150,7 @@ _run_ivps() {
     [ "$status" -eq 0 ]
 
     # Verify node metadata file is removed
-    [ ! -f "$NODES_DIR/test-node.json" ]
+    [ ! -f "$NODES_DIR/test-node/node.json" ]
 
     # Verify incus remote remove was called
     grep -q "remote remove" "$DO_TEST_TMPDIR/incus_log"
@@ -164,9 +164,9 @@ _run_ivps() {
     [ "$status" -eq 0 ]
 
     # Verify node created with correct metadata
-    [ -f "$NODES_DIR/test-node.json" ]
+    [ -f "$NODES_DIR/test-node/node.json" ]
     local meta
-    meta=$(cat "$NODES_DIR/test-node.json")
+    meta=$(cat "$NODES_DIR/test-node/node.json")
     echo "$meta" | jq -e '.name == "test-node"'
     echo "$meta" | jq -e '.gateway == true'
     echo "$meta" | jq -e '.provider == "digitalocean"'
@@ -198,6 +198,6 @@ _run_ivps() {
     [ "$status" -eq 0 ]
 
     # Verify cleanup
-    [ ! -f "$NODES_DIR/test-node.json" ]
+    [ ! -f "$NODES_DIR/test-node/node.json" ]
     grep -q "remote remove" "$DO_TEST_TMPDIR/incus_log"
 }
