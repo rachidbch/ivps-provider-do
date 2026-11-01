@@ -53,6 +53,12 @@ runcmd:
       curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
       apt-get update -y
       apt-get install -y caddy
+      # API-managed Caddy: the packaged caddy-api.service resumes autosave.json
+      # and has no Caddyfile reload that could wipe ivps routes (ivps ADR-019).
+      systemctl disable --now caddy
+      systemctl enable --now caddy-api
+      echo 'TS_PERMIT_CERT_UID=caddy' >> /etc/default/tailscaled
+      systemctl restart tailscaled
     fi
 
 final_message: "ivps node ${NODE_HOSTNAME} bootstrapped successfully"
