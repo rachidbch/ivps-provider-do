@@ -8,7 +8,7 @@ Credentials are received as env vars (auto-exported by ivps from `config.env`). 
 
 Cloud-init templating and cleanup-on-failure are handled by ivps core — the plugin does **not** need `envsubst`, SSH key discovery, or cleanup traps.
 
-`cloud-init.yaml` mirrors `ivps-plugin-skeleton` — it MUST keep the node bridge DNS block after `incus admin init`: `incus network set incusbr0 dns.mode=managed` + `dns.search=${TS_DOMAIN}` (ivps ADR-006: keeps `*.incus` records, advertises the tailnet domain as DHCP search so MagicDNS owns bare names). `${TS_DOMAIN}` is rendered by ivps core. Integration test 04 asserts the block.
+`cloud-init.yaml` mirrors `ivps-plugin-skeleton`: it MUST stay ASCII-only (a non-ASCII byte in a comment made cloud-init discard the whole user-data) and keep the node bridge DNS block after `incus admin init`: `incus network set incusbr0 dns.mode=managed` + `dns.search=${TS_DOMAIN}` (ivps ADR-006: keeps `*.incus` records, advertises the tailnet domain as DHCP search so MagicDNS owns bare names). `${TS_DOMAIN}` is rendered by ivps core. Integration test 04 asserts the block.
 
 ## Dependencies
 
@@ -37,7 +37,7 @@ cmd_validate                   # Check DO_API_TOKEN via doctl; exit 0=ok, 2=bad/
 cmd_create <name> [options]    # Provision a droplet (doctl --wait, no IP polling)
 cmd_delete <name>              # Destroy a droplet (exit 3 if not found)
 cmd_list                       # List droplets (doctl -o json array)
-cmd_show <name>                # Show droplet details (doctl -o json single object)
+cmd_show <name>                # Show droplet details (doctl -o json: one-element ARRAY, read [0])
 ```
 
 Env vars consumed: `DO_API_TOKEN` (required), `IVPS_CONFIG_DIR`, `IVPS_PROVIDER_DIR`.
