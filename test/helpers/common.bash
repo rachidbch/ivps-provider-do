@@ -149,7 +149,7 @@ _create_boot_sequence_stubs() {
     # --- doctl stub ---
     # Routes doctl subcommands:
     #   compute droplet create (with --wait) → returns JSON array with IP immediately
-    #   compute droplet get <name>            → returns single object
+    #   compute droplet get <name>            → returns a one-element array (real doctl)
     #   compute droplet delete <name>         → returns nothing (success)
     #   compute droplet list                  → returns JSON array
     #   account get                           → returns account JSON
@@ -170,12 +170,12 @@ elif echo "$*" | grep -q "droplet delete"; then
     # compute droplet delete → success (no output)
     exit 0
 elif echo "$*" | grep -q "droplet get"; then
-    # compute droplet get <name> → single object or error
+    # compute droplet get <name> → one-element array (as real doctl) or error
     if [ "$STATE" = "destroyed" ]; then
         echo "Error: unable to find droplet"
         exit 1
     else
-        echo "{\"id\":$DROPLET_ID,\"name\":\"$DROPLET_NAME\",\"status\":\"active\",\"networks\":{\"v4\":[{\"type\":\"public\",\"ip_address\":\"203.0.113.42\"}],\"v6\":[{\"type\":\"public\",\"ip_address\":\"2001:db8::1\"}]},\"size\":{\"slug\":\"s-2vcpu-4gb\"},\"region\":{\"slug\":\"nyc1\"},\"image\":{\"slug\":\"ubuntu-24-04-x64\"},\"created_at\":\"2025-01-01T00:00:00Z\"}"
+        echo "[{\"id\":$DROPLET_ID,\"name\":\"$DROPLET_NAME\",\"status\":\"active\",\"networks\":{\"v4\":[{\"type\":\"public\",\"ip_address\":\"203.0.113.42\"}],\"v6\":[{\"type\":\"public\",\"ip_address\":\"2001:db8::1\"}]},\"size\":{\"slug\":\"s-2vcpu-4gb\"},\"region\":{\"slug\":\"nyc1\"},\"image\":{\"slug\":\"ubuntu-24-04-x64\"},\"created_at\":\"2025-01-01T00:00:00Z\"}]"
     fi
 elif echo "$*" | grep -q "droplet list"; then
     # compute droplet list → JSON array

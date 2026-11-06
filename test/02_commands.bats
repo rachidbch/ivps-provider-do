@@ -143,7 +143,7 @@ count=\$(( \$(cat "$call_count_file") + 1 ))
 echo "\$count" > "$call_count_file"
 if [ "\$count" -eq 1 ]; then
     # droplet get response
-    echo '{"id":11111,"name":"my-node"}'
+    echo '[{"id":11111,"name":"my-node"}]'   # real doctl: get returns an array
 fi
 # delete returns nothing (success)
 STUB

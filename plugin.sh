@@ -147,7 +147,7 @@ cmd_delete() {
     response=$(doctl compute droplet get "$name" -t "$DO_API_TOKEN" -o json 2>/dev/null) || true
 
     local droplet_id
-    droplet_id=$(echo "$response" | jq -r '.id // empty' 2>/dev/null)
+    droplet_id=$(echo "$response" | jq -r '(if type == "array" then .[0] else . end) | .id // empty' 2>/dev/null)  # doctl get returns an array
 
     if [ -z "$droplet_id" ]; then
         echo "[ERROR] Droplet '$name' not found." >&2
@@ -184,14 +184,14 @@ cmd_show() {
 
     # Check if we got valid JSON with an id field
     local droplet_id
-    droplet_id=$(echo "$response" | jq -r '.id // empty' 2>/dev/null)
+    droplet_id=$(echo "$response" | jq -r '(if type == "array" then .[0] else . end) | .id // empty' 2>/dev/null)  # doctl get returns an array
 
     if [ -z "$droplet_id" ]; then
         echo "[ERROR] Droplet '$name' not found." >&2
         exit "$EXIT_NOTFOUND"
     fi
 
-    echo "$response" | jq '{
+    echo "$response" | jq '(if type == "array" then .[0] else . end) | {
         id: .id,
         name: .name,
         status: .status,
